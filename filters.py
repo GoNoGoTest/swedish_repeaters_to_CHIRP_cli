@@ -86,6 +86,7 @@ def normalize_row(row: dict[str, str]) -> NormalizedChannel | None:
 
     return NormalizedChannel(
         source_id=clean_text(row.get("id")),
+        source_type="sk6ba",
         type=clean_text(row.get("type")),
         status=clean_text(row.get("status")),
         mode=clean_text(row.get("mode")),

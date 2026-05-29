@@ -260,6 +260,7 @@ def row_to_channel(row: ChannelPackRow) -> NormalizedChannel:
     comment_parts = [row.comment, row.license_note, row.source]
     return NormalizedChannel(
         source_id=row.source_id,
+        source_type="channel_pack",
         type=row.type,
         status="QRV",
         mode=row.mode,
@@ -282,6 +283,21 @@ def row_to_channel(row: ChannelPackRow) -> NormalizedChannel:
         chirp_mode=row.mode,
         chirp_tstep=row.tstep,
         chirp_skip=row.skip,
+        pack_id=row.pack_id,
+        service=row.service,
+        category=row.category,
+        tags=list(row.tags),
+        label=row.label,
+        name_hint=row.name_hint,
+        tx_frequency_mhz=row.tx_frequency,
+        tstep=row.tstep,
+        skip=row.skip,
+        tx_allowed=row.tx_allowed,
+        rx_only=row.rx_only,
+        license_note=row.license_note,
+        source=row.source,
+        source_url=row.source_url,
+        inferred_from_range=row.inferred_from_range,
     )
 
 
