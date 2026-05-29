@@ -49,6 +49,22 @@ class NormalizedChannel:
     chirp_mode: str = "FM"
     chirp_tstep: str = "5.00"
     chirp_skip: str = ""
+    source_type: str = "sk6ba"
+    pack_id: str = ""
+    service: str = ""
+    category: str = ""
+    tags: list[str] = field(default_factory=list)
+    label: str = ""
+    name_hint: str = ""
+    tx_frequency_mhz: Optional[float] = None
+    tstep: str = "5.00"
+    skip: str = ""
+    tx_allowed: bool = True
+    rx_only: bool = False
+    license_note: str = ""
+    source: str = ""
+    source_url: str = ""
+    inferred_from_range: bool = False
 
     def frequency_text(self) -> str:
         return f"{self.frequency_mhz:.6f}".rstrip("0").rstrip(".")

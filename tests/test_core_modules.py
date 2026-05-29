@@ -262,6 +262,48 @@ def test_channelpack_rows_convert_to_chirp_export_fields():
     assert exported["DtcsPolarity"] == "RN"
 
 
+def test_sk6ba_rows_have_explicit_source_type():
+    ch = normalize_row(row())
+
+    assert ch is not None
+    assert ch.source_type == "sk6ba"
+
+
+def test_channelpack_rows_map_metadata_without_sk6ba_repeater_logic():
+    parsed = parse_channelpack_row(channelpack_row(
+        source_id="packet-1",
+        tags="packet|aprs",
+        tx_frequency="145.500000",
+        offset="-0.600000",
+        tone="Tone",
+        rtone_freq="77.0",
+        tx_allowed="false",
+        rx_only="true",
+        inferred_from_range="true",
+    ))
+    ch = rows_to_channels([parsed])[0]
+
+    assert ch.source_type == "channel_pack"
+    assert ch.source_id == "packet-1"
+    assert ch.pack_id == "test_pack"
+    assert ch.service == "amateur"
+    assert ch.category == "aprs"
+    assert ch.tags == ["packet", "aprs"]
+    assert ch.label == "APRS"
+    assert ch.name_hint == "APRS"
+    assert ch.tx_frequency_mhz == 145.5
+    assert ch.tstep == "5.0"
+    assert ch.tx_allowed is False
+    assert ch.rx_only is True
+    assert ch.license_note == "Cert krävs"
+    assert ch.source == "bandplan"
+    assert ch.source_url == "https://example.test"
+    assert ch.inferred_from_range is True
+    assert ch.ctcss_hz is None
+    assert ch.warnings == []
+    assert ch.offset_mhz == 0.6
+
+
 def test_filter_channelpack_rows_supports_default_band_category_and_tags():
     aprs = parse_channelpack_row(channelpack_row())
     voice = parse_channelpack_row(channelpack_row(source_id="voice", enabled_default="false", category="voice", tags="fm_simplex"))
