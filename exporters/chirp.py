@@ -22,8 +22,10 @@ def export_chirp_csv(channels: list[NormalizedChannel], path: str | Path, start_
 
 
 def to_chirp_row(channel: NormalizedChannel, location: int) -> dict[str, str | int]:
-    tone = "Tone" if channel.ctcss_hz is not None else ""
+    tone = channel.chirp_tone or ("Tone" if channel.ctcss_hz is not None else "")
     ctcss = channel.ctcss_text() if channel.ctcss_hz is not None else "88.5"
+    rtone_freq = channel.chirp_rtone_freq or ctcss
+    ctone_freq = channel.chirp_ctone_freq or ctcss
     comment = channel.comment
     if channel.warnings:
         comment = (comment + " | " if comment else "") + ";".join(channel.warnings)
@@ -34,12 +36,12 @@ def to_chirp_row(channel: NormalizedChannel, location: int) -> dict[str, str | i
         "Duplex": channel.duplex,
         "Offset": f"{abs(channel.offset_mhz):.6f}" if channel.duplex else "0.000000",
         "Tone": tone,
-        "rToneFreq": ctcss,
-        "cToneFreq": ctcss,
-        "DtcsCode": "023",
-        "DtcsPolarity": "NN",
-        "Mode": "FM",
-        "TStep": "5.00",
-        "Skip": "",
+        "rToneFreq": rtone_freq,
+        "cToneFreq": ctone_freq,
+        "DtcsCode": channel.chirp_dtcs_code or "023",
+        "DtcsPolarity": channel.chirp_dtcs_polarity or "NN",
+        "Mode": channel.chirp_mode or channel.mode or "FM",
+        "TStep": channel.chirp_tstep or "5.00",
+        "Skip": channel.chirp_skip,
         "Comment": comment,
     }
