@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from exporters.chirp import export_chirp_csv
+from importers.channelpacks import (
+    ChannelPackError,
+    filter_channelpack_rows,
+    load_channelpacks,
+    merge_channels,
+    rows_to_channels,
+    summarize_channelpack_rows,
+)
 from filters import default_analog_fm_row_filter, normalize_rows
 from importers.sk6ba import read_csv
 from naming import DEFAULT_TEMPLATE, generate_names
@@ -39,6 +46,75 @@ def numbered_menu(title: str, options: list[tuple[str, str]], default_index: int
     return options[default_index - 1][1]
 
 
+def yes_no(text: str, default: str = "N") -> bool:
+    answer = prompt(text, default).casefold()
+    return answer in {"j", "ja", "y", "yes"}
+
+
+def parse_filter_values(raw: str) -> set[str]:
+    return {part.strip() for part in raw.replace("|", ",").split(",") if part.strip()}
+
+
+def print_counter_summary(title: str, counter, limit: int = 12) -> None:
+    if not counter:
+        print(f"  {title}: -")
+        return
+    values = ", ".join(f"{key} ({count})" for key, count in counter.most_common(limit))
+    extra = len(counter) - limit
+    if extra > 0:
+        values += f", +{extra} till"
+    print(f"  {title}: {values}")
+
+
+def maybe_add_channelpacks(imported_channels: list) -> list:
+    placement = numbered_menu(
+        "Vill du lägga till kanalpaket utöver repeaterimporten?",
+        [("Nej", "no"), ("Början", "beginning"), ("Slutet", "end"), ("Gemensam sortering", "same_sorting")],
+        default_index=1,
+    )
+    if placement == "no":
+        return imported_channels
+
+    try:
+        packs = load_channelpacks("channelpacks")
+    except ChannelPackError as exc:
+        print(f"Kunde inte läsa kanalpaket: {exc}")
+        return imported_channels
+
+    if not packs:
+        print("Inga kanalpakets-CSV:er hittades i channelpacks/.")
+        return imported_channels
+
+    all_rows = [row for pack in packs for row in pack.rows]
+    print("\nHittade kanalpaket:")
+    for index, pack in enumerate(packs, start=1):
+        warning_text = f" (varningar: {len(pack.warnings)})" if pack.warnings else ""
+        print(f"  {index}. {pack.display_name}: {len(pack.rows)} rader från {pack.path}{warning_text}")
+
+    summary = summarize_channelpack_rows(all_rows)
+    print(f"\nSummering kanalpaket ({summary.total_rows} rader):")
+    print_counter_summary("service", summary.services)
+    print_counter_summary("band", summary.bands)
+    print_counter_summary("category", summary.categories)
+    print_counter_summary("tags", summary.tags)
+
+    enabled_default_only = yes_no("Snabbval: ta bara rader med enabled_default=true? (J/n)", "J")
+    band_filter = parse_filter_values(prompt("Filter band, kommaseparerat (tomt = alla)", ""))
+    category_filter = parse_filter_values(prompt("Filter category, kommaseparerat (tomt = alla)", ""))
+    tag_filter = parse_filter_values(prompt("Filter tags, kommaseparerat/pipe (tomt = alla)", ""))
+
+    selected_rows = filter_channelpack_rows(
+        all_rows,
+        enabled_default_only=enabled_default_only,
+        bands=band_filter or None,
+        categories=category_filter or None,
+        tags=tag_filter or None,
+    )
+    pack_channels = rows_to_channels(selected_rows)
+    print(f"Valde {len(pack_channels)} kanalpaketsrader.")
+    return merge_channels(imported_channels, pack_channels, placement, duplicate_policy="keep_all")
+
+
 def run_pipeline(input_path: str, output_path: str, name_template: str, geo_sort: str, preview_limit: int, assume_yes: bool) -> int:
     rows, inspection = read_csv(input_path)
     print(format_inspection(inspection))
@@ -47,6 +123,8 @@ def run_pipeline(input_path: str, output_path: str, name_template: str, geo_sort
     channels = normalize_rows(filtered)
     channels = sort_channels(channels, geographic_key=geo_sort)
     generate_names(channels, name_template)
+    if not assume_yes:
+        channels = maybe_add_channelpacks(channels)
     print_validation(validate_channels(channels))
     print_preview(channels, limit=preview_limit)
 

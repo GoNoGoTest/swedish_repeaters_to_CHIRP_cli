@@ -41,6 +41,14 @@ class NormalizedChannel:
     comment: str = ""
     warnings: list[str] = field(default_factory=list)
     name: str = ""
+    chirp_tone: str = ""
+    chirp_rtone_freq: str = ""
+    chirp_ctone_freq: str = ""
+    chirp_dtcs_code: str = "023"
+    chirp_dtcs_polarity: str = "NN"
+    chirp_mode: str = "FM"
+    chirp_tstep: str = "5.00"
+    chirp_skip: str = ""
 
     def frequency_text(self) -> str:
         return f"{self.frequency_mhz:.6f}".rstrip("0").rstrip(".")

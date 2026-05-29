@@ -1,5 +1,16 @@
+import pytest
+
 from exporters.chirp import to_chirp_row
 from filters import default_analog_fm_row_filter, normalize_row, normalize_rows
+from importers.channelpacks import (
+    ChannelPackError,
+    filter_channelpack_rows,
+    load_channelpacks,
+    merge_channels,
+    parse_channelpack_row,
+    rows_to_channels,
+    split_tags,
+)
 from importers.sk6ba import inspect_rows
 from models import NormalizedChannel
 from naming import generate_names, render_name
@@ -182,3 +193,100 @@ def test_empty_city_field_uses_name_fallbacks():
     assert render_name(channel(city="", call="SK6ABC", channel="RV48"), "{city}") == "SK6ABC"
     assert render_name(channel(city="", call="", channel="RV48"), "{city}") == "RV48"
     assert render_name(channel(city="", call="", channel=""), "{city}") == "NONAME"
+
+
+def channelpack_row(**overrides):
+    base = {
+        "pack_id": "test_pack",
+        "source_id": "aprs",
+        "enabled_default": "true",
+        "service": "amateur",
+        "band": "2m",
+        "category": "aprs",
+        "tags": "packet|aprs",
+        "type": "Static",
+        "label": "APRS",
+        "channel": "",
+        "name_hint": "APRS",
+        "rx_frequency": "144.800000",
+        "tx_frequency": "144.800000",
+        "duplex": "",
+        "offset": "0.000000",
+        "mode": "NFM",
+        "tstep": "5.0",
+        "tone": "",
+        "rtone_freq": "",
+        "ctone_freq": "",
+        "dtcs_code": "",
+        "dtcs_polarity": "",
+        "skip": "",
+        "tx_allowed": "true",
+        "rx_only": "false",
+        "license_note": "Cert krävs",
+        "comment": "APRS simplex",
+        "source": "bandplan",
+        "source_url": "https://example.test",
+        "inferred_from_range": "false",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_channelpack_tags_are_split_on_pipe():
+    assert split_tags("packet|aprs | data") == ["packet", "aprs", "data"]
+
+
+def test_channelpack_bool_values_are_strict():
+    with pytest.raises(ChannelPackError):
+        parse_channelpack_row(channelpack_row(enabled_default="maybe"))
+
+
+def test_channelpack_missing_noncritical_columns_get_defaults():
+    row = channelpack_row()
+    del row["mode"]
+    parsed = parse_channelpack_row(row)
+
+    assert parsed.mode == "FM"
+    assert parsed.enabled_default is True
+
+
+def test_channelpack_rows_convert_to_chirp_export_fields():
+    parsed = parse_channelpack_row(channelpack_row(mode="NFM", tstep="12.5", dtcs_code="047", dtcs_polarity="RN"))
+    ch = rows_to_channels([parsed])[0]
+    exported = to_chirp_row(ch, 1)
+
+    assert ch.name == "APRS"
+    assert exported["Mode"] == "NFM"
+    assert exported["TStep"] == "12.5"
+    assert exported["DtcsCode"] == "047"
+    assert exported["DtcsPolarity"] == "RN"
+
+
+def test_filter_channelpack_rows_supports_default_band_category_and_tags():
+    aprs = parse_channelpack_row(channelpack_row())
+    voice = parse_channelpack_row(channelpack_row(source_id="voice", enabled_default="false", category="voice", tags="fm_simplex"))
+
+    assert filter_channelpack_rows([aprs, voice], enabled_default_only=True) == [aprs]
+    assert filter_channelpack_rows([aprs, voice], bands={"2m"}, categories={"aprs"}, tags={"packet"}) == [aprs]
+
+
+def test_merge_channelpacks_supports_beginning_end_and_same_sorting():
+    repeater = channel(source_id="r", district="6", city="Borås", frequency_mhz=145.6)
+    static = rows_to_channels([parse_channelpack_row(channelpack_row())])[0]
+
+    assert merge_channels([repeater], [static], "beginning") == [static, repeater]
+    assert merge_channels([repeater], [static], "end") == [repeater, static]
+    assert merge_channels([repeater], [static], "same_sorting") == [repeater, static]
+
+
+def test_load_channelpacks_finds_repository_csv_files():
+    packs = load_channelpacks("channelpacks")
+
+    assert len(packs) >= 2
+    assert sum(len(pack.rows) for pack in packs) > 0
+
+
+def test_sort_channels_handles_static_rows_without_location_metadata():
+    static = type("StaticOnly", (), {"type": "Static", "frequency_mhz": 144.8})()
+
+    assert sort_channels([static]) == [static]
