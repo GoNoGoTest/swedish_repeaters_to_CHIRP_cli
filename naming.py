@@ -10,11 +10,20 @@ from models import NormalizedChannel
 
 DEFAULT_TEMPLATE = "{district}{city}"
 MAX_CHIRP_NAME = 16
-TOKEN_RE = re.compile(r"\{(type|network|band|district|city|channel|call)\}")
-SWEDISH_TRANSLATION = str.maketrans({
-    "Å": "A", "Ä": "A", "Ö": "O",
-    "å": "a", "ä": "a", "ö": "o",
-})
+TOKEN_RE = re.compile(
+    r"\{(network|district|city|call|service|category|label|channel|name_hint|type|band)\}"
+)
+SEPARATOR_RE = re.compile(r"([_/-])(?:\s*\1)+")
+SWEDISH_TRANSLATION = str.maketrans(
+    {
+        "Å": "A",
+        "Ä": "A",
+        "Ö": "O",
+        "å": "a",
+        "ä": "a",
+        "ö": "o",
+    }
+)
 
 
 def generate_names(
@@ -23,7 +32,10 @@ def generate_names(
     max_len: int = MAX_CHIRP_NAME,
     transliterate_swedish: bool = False,
 ) -> None:
-    base_names = [clip_name(render_name(ch, template, transliterate_swedish), max_len) for ch in channels]
+    base_names = [
+        clip_name(render_name(ch, template, transliterate_swedish), max_len)
+        for ch in channels
+    ]
     groups: dict[str, list[int]] = defaultdict(list)
     for index, base in enumerate(base_names):
         groups[base].append(index)
@@ -46,19 +58,53 @@ def generate_names(
             channels[index].name = candidate
 
 
-def render_name(channel: NormalizedChannel, template: str, transliterate_swedish: bool = False) -> str:
+def render_name(
+    channel: NormalizedChannel, template: str, transliterate_swedish: bool = False
+) -> str:
     def repl(match: re.Match[str]) -> str:
         token = match.group(1)
-        if token == "city":
-            return city_fallback(channel)
+        if token == "city" and channel.city:
+            return channel.city
         return str(getattr(channel, token, "") or "")
 
     rendered = TOKEN_RE.sub(repl, template)
-    return sanitize_name(rendered or channel.call or channel.city or channel.channel or f"CH{channel.source_id}", transliterate_swedish)
+    rendered = clean_empty_token_separators(rendered)
+    fallback = channel_name_fallback(channel)
+    return sanitize_name(rendered or fallback, transliterate_swedish)
+
+
+def clean_empty_token_separators(value: str) -> str:
+    """Remove separator artifacts left behind by empty template tokens."""
+    value = re.sub(r"\s+", "", value.strip())
+    value = SEPARATOR_RE.sub(r"\1", value)
+    return value.strip("_-/")
+
+
+def channel_name_fallback(channel: NormalizedChannel) -> str:
+    if channel.source_type == "channel_pack":
+        for value in (
+            channel.name_hint,
+            channel.channel,
+            channel.label,
+            channel.call,
+            channel.city,
+            channel.source_id,
+        ):
+            if value:
+                return value
+        return "NONAME"
+    return city_fallback(channel)
 
 
 def city_fallback(channel: NormalizedChannel) -> str:
-    return channel.city or channel.call or channel.channel or "NONAME"
+    return (
+        channel.city
+        or channel.call
+        or channel.channel
+        or channel.name_hint
+        or channel.label
+        or "NONAME"
+    )
 
 
 def sanitize_name(value: str, transliterate_swedish: bool = False) -> str:
@@ -67,6 +113,7 @@ def sanitize_name(value: str, transliterate_swedish: bool = False) -> str:
         value = value.translate(SWEDISH_TRANSLATION)
     allowed = r"[^A-Za-z0-9_/-]" if transliterate_swedish else r"[^A-Za-z0-9ÅÄÖåäö_/-]"
     value = re.sub(allowed, "", value)
+    value = SEPARATOR_RE.sub(r"\1", value).strip("_-/")
     return value or "NONAME"
 
 
@@ -75,5 +122,14 @@ def clip_name(value: str, max_len: int) -> str:
 
 
 def deterministic_suffix(channel: NormalizedChannel, length: int = 3) -> str:
-    key = "|".join([channel.source_id, channel.call, channel.channel, f"{channel.frequency_mhz:.6f}"])
-    return hashlib.blake2s(key.encode("utf-8"), digest_size=4).hexdigest().upper()[:length]
+    key = "|".join(
+        [
+            channel.source_id,
+            channel.call,
+            channel.channel,
+            f"{channel.frequency_mhz:.6f}",
+        ]
+    )
+    return (
+        hashlib.blake2s(key.encode("utf-8"), digest_size=4).hexdigest().upper()[:length]
+    )

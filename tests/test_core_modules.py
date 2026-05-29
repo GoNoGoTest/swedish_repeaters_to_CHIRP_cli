@@ -83,7 +83,9 @@ def test_70cm_repeater_positive_shift_normalizes_plus_offset():
 
 
 def test_simplex_hotspot_has_no_duplex_or_offset():
-    ch = normalize_row(row(type="Hotspot", band="70cm", output="434.550", tx_shift="0", access=""))
+    ch = normalize_row(
+        row(type="Hotspot", band="70cm", output="434.550", tx_shift="0", access="")
+    )
 
     assert ch is not None
     assert ch.duplex == ""
@@ -157,8 +159,18 @@ def test_missing_coordinates_during_geosort_warns_but_does_not_crash():
 
 
 def test_clipped_name_collisions_get_deterministic_suffixes():
-    first = channel(source_id="1", city="LångortsnamnSomKolliderar", call="SK6AAA", frequency_mhz=145.6)
-    second = channel(source_id="2", city="LångortsnamnSomKolliderar", call="SK6BBB", frequency_mhz=145.7)
+    first = channel(
+        source_id="1",
+        city="LångortsnamnSomKolliderar",
+        call="SK6AAA",
+        frequency_mhz=145.6,
+    )
+    second = channel(
+        source_id="2",
+        city="LångortsnamnSomKolliderar",
+        call="SK6BBB",
+        frequency_mhz=145.7,
+    )
 
     generate_names([first, second], template="{city}", max_len=10)
     names_once = (first.name, second.name)
@@ -179,7 +191,9 @@ def test_swedish_characters_are_transliterated_when_ascii_names_are_requested():
 
 
 def test_long_comment_and_callsign_export_without_none_nan_or_empty_junk_parts():
-    ch = normalize_row(row(network=None, call=float("nan"), channel="", locator="", access="1750"))
+    ch = normalize_row(
+        row(network=None, call=float("nan"), channel="", locator="", access="1750")
+    )
 
     assert ch is not None
     exported = to_chirp_row(ch, 1)
@@ -190,7 +204,10 @@ def test_long_comment_and_callsign_export_without_none_nan_or_empty_junk_parts()
 
 
 def test_empty_city_field_uses_name_fallbacks():
-    assert render_name(channel(city="", call="SK6ABC", channel="RV48"), "{city}") == "SK6ABC"
+    assert (
+        render_name(channel(city="", call="SK6ABC", channel="RV48"), "{city}")
+        == "SK6ABC"
+    )
     assert render_name(channel(city="", call="", channel="RV48"), "{city}") == "RV48"
     assert render_name(channel(city="", call="", channel=""), "{city}") == "NONAME"
 
@@ -251,7 +268,9 @@ def test_channelpack_missing_noncritical_columns_get_defaults():
 
 
 def test_channelpack_rows_convert_to_chirp_export_fields():
-    parsed = parse_channelpack_row(channelpack_row(mode="NFM", tstep="12.5", dtcs_code="047", dtcs_polarity="RN"))
+    parsed = parse_channelpack_row(
+        channelpack_row(mode="NFM", tstep="12.5", dtcs_code="047", dtcs_polarity="RN")
+    )
     ch = rows_to_channels([parsed])[0]
     exported = to_chirp_row(ch, 1)
 
@@ -270,17 +289,19 @@ def test_sk6ba_rows_have_explicit_source_type():
 
 
 def test_channelpack_rows_map_metadata_without_sk6ba_repeater_logic():
-    parsed = parse_channelpack_row(channelpack_row(
-        source_id="packet-1",
-        tags="packet|aprs",
-        tx_frequency="145.500000",
-        offset="-0.600000",
-        tone="Tone",
-        rtone_freq="77.0",
-        tx_allowed="false",
-        rx_only="true",
-        inferred_from_range="true",
-    ))
+    parsed = parse_channelpack_row(
+        channelpack_row(
+            source_id="packet-1",
+            tags="packet|aprs",
+            tx_frequency="145.500000",
+            offset="-0.600000",
+            tone="Tone",
+            rtone_freq="77.0",
+            tx_allowed="false",
+            rx_only="true",
+            inferred_from_range="true",
+        )
+    )
     ch = rows_to_channels([parsed])[0]
 
     assert ch.source_type == "channel_pack"
@@ -306,10 +327,19 @@ def test_channelpack_rows_map_metadata_without_sk6ba_repeater_logic():
 
 def test_filter_channelpack_rows_supports_default_band_category_and_tags():
     aprs = parse_channelpack_row(channelpack_row())
-    voice = parse_channelpack_row(channelpack_row(source_id="voice", enabled_default="false", category="voice", tags="fm_simplex"))
+    voice = parse_channelpack_row(
+        channelpack_row(
+            source_id="voice",
+            enabled_default="false",
+            category="voice",
+            tags="fm_simplex",
+        )
+    )
 
     assert filter_channelpack_rows([aprs, voice], enabled_default_only=True) == [aprs]
-    assert filter_channelpack_rows([aprs, voice], bands={"2m"}, categories={"aprs"}, tags={"packet"}) == [aprs]
+    assert filter_channelpack_rows(
+        [aprs, voice], bands={"2m"}, categories={"aprs"}, tags={"packet"}
+    ) == [aprs]
 
 
 def test_merge_channelpacks_supports_beginning_end_and_same_sorting():
@@ -332,3 +362,120 @@ def test_sort_channels_handles_static_rows_without_location_metadata():
     static = type("StaticOnly", (), {"type": "Static", "frequency_mhz": 144.8})()
 
     assert sort_channels([static]) == [static]
+
+
+def test_channelpack_name_tokens_and_fallbacks_avoid_empty_separators():
+    ch = channel(
+        source_type="channel_pack",
+        source_id="src1",
+        service="amateur",
+        category="",
+        district="",
+        label="Label",
+        channel="CH1",
+        name_hint="Hint",
+        type="Static",
+        band="2m",
+        city="",
+        call="",
+    )
+
+    assert render_name(ch, "{service}-{category}-{name_hint}") == "amateur-Hint"
+    assert render_name(ch, "{district}/{city}/{category}") == "Hint"
+
+
+def test_chirp_export_rx_only_policies_and_split_fields():
+    ch = channel(
+        source_type="channel_pack",
+        source_id="rx",
+        frequency_mhz=145.5,
+        tx_frequency_mhz=144.9,
+        duplex="split",
+        rx_only=True,
+        tx_allowed=False,
+        mode="NFM",
+        tstep="12.5",
+        skip="P",
+        license_note="RX only enligt bandplan",
+        comment="Lyssna",
+    )
+
+    with pytest.raises(ValueError):
+        to_chirp_row(ch, 1)
+
+    marked = to_chirp_row(ch, 1, rx_only_policy="mark_rx_only")
+    assert marked is not None
+    assert marked["Duplex"] == "split"
+    assert marked["Offset"] == "144.900000"
+    assert marked["Mode"] == "NFM"
+    assert marked["TStep"] == "12.5"
+    assert marked["Skip"] == "P"
+    assert marked["Comment"] == "Lyssna | RX only enligt bandplan | RX-only"
+
+    disabled = to_chirp_row(ch, 1, rx_only_policy="duplex_off")
+    assert disabled is not None
+    assert disabled["Duplex"] == "off"
+    assert disabled["Offset"] == "0.000000"
+    assert to_chirp_row(ch, 1, rx_only_policy="skip") is None
+
+
+def test_validation_finds_channelpack_issues_and_frequency_duplicates():
+    from validation import (
+        find_frequency_duplicates,
+        validate_channelpack_header,
+        validate_channelpack_raw_rows,
+    )
+
+    repeater = channel(source_id="sk", frequency_mhz=145.5)
+    pack = channel(
+        source_type="channel_pack",
+        source_id="pack1",
+        pack_id="",
+        frequency_mhz=145.5,
+        label="",
+        channel="",
+        name_hint="",
+        rx_only=True,
+    )
+    other_pack = channel(
+        source_type="channel_pack",
+        source_id="pack2",
+        pack_id="pack",
+        frequency_mhz=145.5,
+        label="L",
+        name_hint="N",
+    )
+
+    counts = validate_channels([repeater, pack, other_pack])
+    assert counts["missing_pack_id"] == 1
+    assert counts["missing_label"] == 1
+    assert counts["missing_channel"] == 1
+    assert counts["missing_name_hint"] == 1
+    assert counts["rx_only_without_policy"] == 1
+    assert counts["frequency_duplicate"] == 1
+    assert counts["frequency_duplicate_sk6ba_channel_pack"] == 1
+    assert counts["frequency_duplicate_channel_pack"] == 1
+
+    duplicates = find_frequency_duplicates([repeater, pack, other_pack])
+    assert duplicates[0]["frequency"] == 145.5
+    assert duplicates[0]["source_types"] == ["channel_pack", "sk6ba"]
+    assert duplicates[0]["source_ids"] == ["sk", "pack1", "pack2"]
+
+    assert (
+        validate_channelpack_header(["pack_id", "source_id"])["missing_header_column"]
+        > 1
+    )
+    raw_counts = validate_channelpack_raw_rows(
+        [
+            {
+                "pack_id": "",
+                "source_id": "dup",
+                "rx_frequency": "bad",
+                "enabled_default": "maybe",
+            },
+            {"pack_id": "p", "source_id": "dup", "rx_frequency": "145.5"},
+        ]
+    )
+    assert raw_counts["duplicate_source_id"] == 1
+    assert raw_counts["missing_or_invalid_rx_frequency"] == 1
+    assert raw_counts["invalid_boolean_enabled_default"] == 1

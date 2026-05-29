@@ -65,6 +65,8 @@ class NormalizedChannel:
     source: str = ""
     source_url: str = ""
     inferred_from_range: bool = False
+    enabled_default: bool | None = None
+    manually_selected: bool | None = None
 
     def frequency_text(self) -> str:
         return f"{self.frequency_mhz:.6f}".rstrip("0").rstrip(".")
