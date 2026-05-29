@@ -10,6 +10,8 @@ def sort_channels(channels: list[NormalizedChannel], geographic_key: str = "none
         if geographic_key == "locator":
             return channel.locator or ""
         if geographic_key == "latlon":
+            if (channel.latitude is None or channel.longitude is None) and "missing_coordinates" not in channel.warnings:
+                channel.warnings.append("missing_coordinates")
             return (channel.latitude if channel.latitude is not None else 999.0, channel.longitude if channel.longitude is not None else 999.0)
         return ""
 

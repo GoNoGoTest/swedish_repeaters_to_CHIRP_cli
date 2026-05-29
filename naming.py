@@ -11,10 +11,19 @@ from models import NormalizedChannel
 DEFAULT_TEMPLATE = "{district}{city}"
 MAX_CHIRP_NAME = 16
 TOKEN_RE = re.compile(r"\{(type|network|band|district|city|channel|call)\}")
+SWEDISH_TRANSLATION = str.maketrans({
+    "Å": "A", "Ä": "A", "Ö": "O",
+    "å": "a", "ä": "a", "ö": "o",
+})
 
 
-def generate_names(channels: list[NormalizedChannel], template: str = DEFAULT_TEMPLATE, max_len: int = MAX_CHIRP_NAME) -> None:
-    base_names = [clip_name(render_name(ch, template), max_len) for ch in channels]
+def generate_names(
+    channels: list[NormalizedChannel],
+    template: str = DEFAULT_TEMPLATE,
+    max_len: int = MAX_CHIRP_NAME,
+    transliterate_swedish: bool = False,
+) -> None:
+    base_names = [clip_name(render_name(ch, template, transliterate_swedish), max_len) for ch in channels]
     groups: dict[str, list[int]] = defaultdict(list)
     for index, base in enumerate(base_names):
         groups[base].append(index)
@@ -37,18 +46,28 @@ def generate_names(channels: list[NormalizedChannel], template: str = DEFAULT_TE
             channels[index].name = candidate
 
 
-def render_name(channel: NormalizedChannel, template: str) -> str:
+def render_name(channel: NormalizedChannel, template: str, transliterate_swedish: bool = False) -> str:
     def repl(match: re.Match[str]) -> str:
-        return str(getattr(channel, match.group(1), "") or "")
+        token = match.group(1)
+        if token == "city":
+            return city_fallback(channel)
+        return str(getattr(channel, token, "") or "")
 
     rendered = TOKEN_RE.sub(repl, template)
-    return sanitize_name(rendered or channel.call or channel.city or f"CH{channel.source_id}")
+    return sanitize_name(rendered or channel.call or channel.city or channel.channel or f"CH{channel.source_id}", transliterate_swedish)
 
 
-def sanitize_name(value: str) -> str:
+def city_fallback(channel: NormalizedChannel) -> str:
+    return channel.city or channel.call or channel.channel or "NONAME"
+
+
+def sanitize_name(value: str, transliterate_swedish: bool = False) -> str:
     value = re.sub(r"\s+", "", value.strip())
-    value = re.sub(r"[^A-Za-z0-9ÅÄÖåäö_/-]", "", value)
-    return value or "CHAN"
+    if transliterate_swedish:
+        value = value.translate(SWEDISH_TRANSLATION)
+    allowed = r"[^A-Za-z0-9_/-]" if transliterate_swedish else r"[^A-Za-z0-9ÅÄÖåäö_/-]"
+    value = re.sub(allowed, "", value)
+    return value or "NONAME"
 
 
 def clip_name(value: str, max_len: int) -> str:
