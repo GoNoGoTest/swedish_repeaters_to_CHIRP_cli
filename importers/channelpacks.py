@@ -12,11 +12,36 @@ from models import NormalizedChannel
 from sorting import sort_channels
 
 CHANNELPACK_COLUMNS = [
-    "pack_id", "source_id", "enabled_default", "service", "band", "category", "tags",
-    "type", "label", "channel", "name_hint", "rx_frequency", "tx_frequency", "duplex",
-    "offset", "mode", "tstep", "tone", "rtone_freq", "ctone_freq", "dtcs_code",
-    "dtcs_polarity", "skip", "tx_allowed", "rx_only", "license_note", "comment",
-    "source", "source_url", "inferred_from_range",
+    "pack_id",
+    "source_id",
+    "enabled_default",
+    "service",
+    "band",
+    "category",
+    "tags",
+    "type",
+    "label",
+    "channel",
+    "name_hint",
+    "rx_frequency",
+    "tx_frequency",
+    "duplex",
+    "offset",
+    "mode",
+    "tstep",
+    "tone",
+    "rtone_freq",
+    "ctone_freq",
+    "dtcs_code",
+    "dtcs_polarity",
+    "skip",
+    "tx_allowed",
+    "rx_only",
+    "license_note",
+    "comment",
+    "source",
+    "source_url",
+    "inferred_from_range",
 ]
 
 BOOL_COLUMNS = {"enabled_default", "tx_allowed", "rx_only", "inferred_from_range"}
@@ -26,7 +51,9 @@ BOOL_DEFAULTS = {
     "rx_only": False,
     "inferred_from_range": False,
 }
-TEXT_DEFAULTS = {column: "" for column in CHANNELPACK_COLUMNS if column not in BOOL_COLUMNS}
+TEXT_DEFAULTS = {
+    column: "" for column in CHANNELPACK_COLUMNS if column not in BOOL_COLUMNS
+}
 
 TRUE_VALUES = {"true", "1", "yes", "y", "ja", "j"}
 FALSE_VALUES = {"false", "0", "no", "n", "nej"}
@@ -110,13 +137,21 @@ def read_channelpack(path: str | Path) -> ChannelPack:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             return ChannelPack(csv_path, csv_path.stem, [], ["empty_csv"])
-        missing = [column for column in CHANNELPACK_COLUMNS if column not in reader.fieldnames]
-        non_critical_missing = [column for column in missing if column not in {"source_id", "rx_frequency"}]
+        missing = [
+            column for column in CHANNELPACK_COLUMNS if column not in reader.fieldnames
+        ]
+        non_critical_missing = [
+            column for column in missing if column not in {"source_id", "rx_frequency"}
+        ]
         if non_critical_missing:
             warnings.append("missing_columns:" + ",".join(non_critical_missing))
-        critical_missing = [column for column in missing if column in {"source_id", "rx_frequency"}]
+        critical_missing = [
+            column for column in missing if column in {"source_id", "rx_frequency"}
+        ]
         if critical_missing:
-            raise ChannelPackError(f"{csv_path}: saknar kritiska kolumner: {', '.join(critical_missing)}")
+            raise ChannelPackError(
+                f"{csv_path}: saknar kritiska kolumner: {', '.join(critical_missing)}"
+            )
 
         for line_number, raw_row in enumerate(reader, start=2):
             row = _with_defaults(raw_row)
@@ -134,13 +169,19 @@ def read_channelpack(path: str | Path) -> ChannelPack:
 def _with_defaults(raw_row: dict[str, str | None]) -> dict[str, str]:
     row: dict[str, str] = {}
     for column in CHANNELPACK_COLUMNS:
-        default = str(BOOL_DEFAULTS[column]).lower() if column in BOOL_DEFAULTS else TEXT_DEFAULTS[column]
+        default = (
+            str(BOOL_DEFAULTS[column]).lower()
+            if column in BOOL_DEFAULTS
+            else TEXT_DEFAULTS[column]
+        )
         value = raw_row.get(column, default)
         row[column] = clean(value) if value is not None else default
     return row
 
 
-def parse_channelpack_row(row: dict[str, str], path: Path | None = None, line_number: int | None = None) -> ChannelPackRow:
+def parse_channelpack_row(
+    row: dict[str, str], path: Path | None = None, line_number: int | None = None
+) -> ChannelPackRow:
     context = ""
     if path is not None:
         context = str(path)
@@ -148,7 +189,10 @@ def parse_channelpack_row(row: dict[str, str], path: Path | None = None, line_nu
             context += f":{line_number}"
         context += ": "
 
-    bools = {column: parse_bool(row.get(column, ""), column, context) for column in BOOL_COLUMNS}
+    bools = {
+        column: parse_bool(row.get(column, ""), column, context)
+        for column in BOOL_COLUMNS
+    }
     rx_frequency = parse_float(row.get("rx_frequency"))
     if rx_frequency is None:
         raise ValueError("invalid_rx_frequency")
@@ -268,7 +312,7 @@ def row_to_channel(row: ChannelPackRow) -> NormalizedChannel:
         district="",
         network=row.service,
         city="",
-        channel=row.channel or row.label,
+        channel=row.channel,
         call="",
         frequency_mhz=row.rx_frequency,
         duplex=row.duplex,
@@ -298,6 +342,8 @@ def row_to_channel(row: ChannelPackRow) -> NormalizedChannel:
         source=row.source,
         source_url=row.source_url,
         inferred_from_range=row.inferred_from_range,
+        enabled_default=row.enabled_default,
+        manually_selected=None,
     )
 
 
@@ -307,7 +353,9 @@ def merge_channels(
     placement: str,
     duplicate_policy: str = "keep_all",
 ) -> list[NormalizedChannel]:
-    deduped_pack_channels = apply_duplicate_policy(imported_channels, pack_channels, duplicate_policy)
+    deduped_pack_channels = apply_duplicate_policy(
+        imported_channels, pack_channels, duplicate_policy
+    )
     if placement == "beginning":
         return [*deduped_pack_channels, *imported_channels]
     if placement == "end":
@@ -326,9 +374,17 @@ def apply_duplicate_policy(
         return list(pack_channels)
     if duplicate_policy == "skip_pack_duplicates":
         imported_keys = {duplicate_key(channel) for channel in imported_channels}
-        return [channel for channel in pack_channels if duplicate_key(channel) not in imported_keys]
+        return [
+            channel
+            for channel in pack_channels
+            if duplicate_key(channel) not in imported_keys
+        ]
     raise ValueError(f"Okänd dubblettpolicy: {duplicate_policy}")
 
 
 def duplicate_key(channel: NormalizedChannel) -> tuple[float, str, str]:
-    return (round(channel.frequency_mhz, 6), channel.duplex, f"{abs(channel.offset_mhz):.6f}")
+    return (
+        round(channel.frequency_mhz, 6),
+        channel.duplex,
+        f"{abs(channel.offset_mhz):.6f}",
+    )

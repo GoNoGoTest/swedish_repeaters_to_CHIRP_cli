@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from exporters.chirp import export_chirp_csv
+from exporters.chirp import RX_ONLY_POLICIES, export_chirp_csv
 from importers.channelpacks import (
     ChannelPackError,
     filter_channelpack_rows,
@@ -30,7 +30,9 @@ def prompt(text: str, default: str) -> str:
     return answer or default
 
 
-def numbered_menu(title: str, options: list[tuple[str, str]], default_index: int = 1) -> str:
+def numbered_menu(
+    title: str, options: list[tuple[str, str]], default_index: int = 1
+) -> str:
     print(f"\n{title}")
     for index, (label, _value) in enumerate(options, start=1):
         default_mark = " (default)" if index == default_index else ""
@@ -69,7 +71,12 @@ def print_counter_summary(title: str, counter, limit: int = 12) -> None:
 def maybe_add_channelpacks(imported_channels: list) -> list:
     placement = numbered_menu(
         "Vill du lägga till kanalpaket utöver repeaterimporten?",
-        [("Nej", "no"), ("Början", "beginning"), ("Slutet", "end"), ("Gemensam sortering", "same_sorting")],
+        [
+            ("Nej", "no"),
+            ("Början", "beginning"),
+            ("Slutet", "end"),
+            ("Gemensam sortering", "same_sorting"),
+        ],
         default_index=1,
     )
     if placement == "no":
@@ -89,7 +96,9 @@ def maybe_add_channelpacks(imported_channels: list) -> list:
     print("\nHittade kanalpaket:")
     for index, pack in enumerate(packs, start=1):
         warning_text = f" (varningar: {len(pack.warnings)})" if pack.warnings else ""
-        print(f"  {index}. {pack.display_name}: {len(pack.rows)} rader från {pack.path}{warning_text}")
+        print(
+            f"  {index}. {pack.display_name}: {len(pack.rows)} rader från {pack.path}{warning_text}"
+        )
 
     summary = summarize_channelpack_rows(all_rows)
     print(f"\nSummering kanalpaket ({summary.total_rows} rader):")
@@ -98,10 +107,18 @@ def maybe_add_channelpacks(imported_channels: list) -> list:
     print_counter_summary("category", summary.categories)
     print_counter_summary("tags", summary.tags)
 
-    enabled_default_only = yes_no("Snabbval: ta bara rader med enabled_default=true? (J/n)", "J")
-    band_filter = parse_filter_values(prompt("Filter band, kommaseparerat (tomt = alla)", ""))
-    category_filter = parse_filter_values(prompt("Filter category, kommaseparerat (tomt = alla)", ""))
-    tag_filter = parse_filter_values(prompt("Filter tags, kommaseparerat/pipe (tomt = alla)", ""))
+    enabled_default_only = yes_no(
+        "Snabbval: ta bara rader med enabled_default=true? (J/n)", "J"
+    )
+    band_filter = parse_filter_values(
+        prompt("Filter band, kommaseparerat (tomt = alla)", "")
+    )
+    category_filter = parse_filter_values(
+        prompt("Filter category, kommaseparerat (tomt = alla)", "")
+    )
+    tag_filter = parse_filter_values(
+        prompt("Filter tags, kommaseparerat/pipe (tomt = alla)", "")
+    )
 
     selected_rows = filter_channelpack_rows(
         all_rows,
@@ -112,20 +129,30 @@ def maybe_add_channelpacks(imported_channels: list) -> list:
     )
     pack_channels = rows_to_channels(selected_rows)
     print(f"Valde {len(pack_channels)} kanalpaketsrader.")
-    return merge_channels(imported_channels, pack_channels, placement, duplicate_policy="keep_all")
+    return merge_channels(
+        imported_channels, pack_channels, placement, duplicate_policy="keep_all"
+    )
 
 
-def run_pipeline(input_path: str, output_path: str, name_template: str, geo_sort: str, preview_limit: int, assume_yes: bool) -> int:
+def run_pipeline(
+    input_path: str,
+    output_path: str,
+    name_template: str,
+    geo_sort: str,
+    preview_limit: int,
+    assume_yes: bool,
+    rx_only_policy: str | None = None,
+) -> int:
     rows, inspection = read_csv(input_path)
     print(format_inspection(inspection))
 
     filtered = [row for row in rows if default_analog_fm_row_filter(row)]
     channels = normalize_rows(filtered)
     channels = sort_channels(channels, geographic_key=geo_sort)
-    generate_names(channels, name_template)
     if not assume_yes:
         channels = maybe_add_channelpacks(channels)
-    print_validation(validate_channels(channels))
+    generate_names(channels, name_template)
+    print_validation(validate_channels(channels, rx_only_policy=rx_only_policy))
     print_preview(channels, limit=preview_limit)
 
     if not channels:
@@ -133,12 +160,14 @@ def run_pipeline(input_path: str, output_path: str, name_template: str, geo_sort
         return 2
 
     if not assume_yes:
-        confirm = prompt(f"Exportera {len(channels)} kanaler till {output_path}? (j/N)", "N")
+        confirm = prompt(
+            f"Exportera {len(channels)} kanaler till {output_path}? (j/N)", "N"
+        )
         if confirm.lower() not in {"j", "ja", "y", "yes"}:
             print("Avbrutet före export.")
             return 1
 
-    export_chirp_csv(channels, output_path)
+    export_chirp_csv(channels, output_path, rx_only_policy=rx_only_policy)
     print(f"Skrev CHIRP CSV: {output_path}")
     return 0
 
@@ -153,27 +182,79 @@ def interactive() -> int:
     output_path = prompt("CHIRP output CSV", DEFAULT_OUTPUT)
 
     if mode == "quick":
-        return run_pipeline(input_path, output_path, DEFAULT_TEMPLATE, "none", 20, assume_yes=False)
+        return run_pipeline(
+            input_path,
+            output_path,
+            DEFAULT_TEMPLATE,
+            "none",
+            20,
+            assume_yes=False,
+            rx_only_policy=None,
+        )
 
-    template = prompt("Namntemplate tokens {type} {network} {band} {district} {city} {channel} {call}", DEFAULT_TEMPLATE)
+    template = prompt(
+        "Namntemplate tokens {type} {network} {band} {district} {city} {channel} {call} {service} {category} {label} {name_hint}",
+        DEFAULT_TEMPLATE,
+    )
     geo_sort = numbered_menu(
         "Geografisk sorteringsnyckel",
         [("Ingen", "none"), ("Locator", "locator"), ("Latitud/longitud", "latlon")],
         default_index=1,
     )
     preview_limit = int(prompt("Antal preview-rader", "30"))
-    return run_pipeline(input_path, output_path, template, geo_sort, preview_limit, assume_yes=False)
+    rx_only_policy = numbered_menu(
+        "RX-only-policy för kanalpaket",
+        [
+            ("Stoppa export", "stop"),
+            ("Sätt Duplex=off", "duplex_off"),
+            ("Markera Skip", "mark_rx_only"),
+            ("Hoppa över", "skip"),
+        ],
+        default_index=1,
+    )
+    return run_pipeline(
+        input_path,
+        output_path,
+        template,
+        geo_sort,
+        preview_limit,
+        assume_yes=False,
+        rx_only_policy=rx_only_policy,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Konvertera SK6BA/Marks repeater CSV till CHIRP CSV.")
+    parser = argparse.ArgumentParser(
+        description="Konvertera SK6BA/Marks repeater CSV till CHIRP CSV."
+    )
     parser.add_argument("--input", default=DEFAULT_INPUT, help="Lokal SK6BA/Marks CSV")
-    parser.add_argument("--output", default=DEFAULT_OUTPUT, help="CHIRP CSV som ska skrivas")
-    parser.add_argument("--name-template", default=DEFAULT_TEMPLATE, help="Namntemplate med tokens")
-    parser.add_argument("--geo-sort", choices=["none", "locator", "latlon"], default="none", help="Valfri geografisk sorteringsnyckel")
+    parser.add_argument(
+        "--output", default=DEFAULT_OUTPUT, help="CHIRP CSV som ska skrivas"
+    )
+    parser.add_argument(
+        "--name-template", default=DEFAULT_TEMPLATE, help="Namntemplate med tokens"
+    )
+    parser.add_argument(
+        "--geo-sort",
+        choices=["none", "locator", "latlon"],
+        default="none",
+        help="Valfri geografisk sorteringsnyckel",
+    )
     parser.add_argument("--preview", type=int, default=20, help="Antal preview-rader")
-    parser.add_argument("--yes", action="store_true", help="Exportera utan interaktiv bekräftelse")
-    parser.add_argument("--interactive", action="store_true", help="Tvinga interaktivt snabb/avancerat läge")
+    parser.add_argument(
+        "--yes", action="store_true", help="Exportera utan interaktiv bekräftelse"
+    )
+    parser.add_argument(
+        "--rx-only-policy",
+        choices=sorted(RX_ONLY_POLICIES),
+        default=None,
+        help="Policy för kanalpaketsrader som är RX-only eller tx_allowed=false",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Tvinga interaktivt snabb/avancerat läge",
+    )
     return parser
 
 
@@ -181,8 +262,27 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.interactive:
         return interactive()
-    if any(flag in __import__('sys').argv for flag in ["--input", "--output", "--name-template", "--geo-sort", "--preview", "--yes"]):
-        return run_pipeline(args.input, args.output, args.name_template, args.geo_sort, args.preview, args.yes)
+    if any(
+        flag in __import__("sys").argv
+        for flag in [
+            "--input",
+            "--output",
+            "--name-template",
+            "--geo-sort",
+            "--preview",
+            "--yes",
+            "--rx-only-policy",
+        ]
+    ):
+        return run_pipeline(
+            args.input,
+            args.output,
+            args.name_template,
+            args.geo_sort,
+            args.preview,
+            args.yes,
+            rx_only_policy=args.rx_only_policy,
+        )
     return interactive()
 
 
